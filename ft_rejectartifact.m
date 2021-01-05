@@ -463,15 +463,32 @@ if any(strcmp(cfg.artfctdef.reject, {'partial', 'complete', 'nan', 'value'}))
     elseif any(rejecttrial) && strcmp(cfg.artfctdef.reject, 'complete')
       % some part of the trial is bad, check if within crittoilim?
       if (checkCritToi)
-        critInd = (data.time{trial} >= cfg.artfctdef.crittoilim(trial,1) & data.time{trial} <= cfg.artfctdef.crittoilim(trial,2));
-        if (any(critInd & rejecttrial))
-          count_complete_reject = count_complete_reject + 1;
-          trlCompletelyRemovedInd = [trlCompletelyRemovedInd trial];
-          continue;
-        else
-          trlnew = [trlnew; trl(trial,:)];
-          count_outsidecrit = count_outsidecrit + 1;
-        end
+          if hasdata
+              critInd = (data.time{trial} >= cfg.artfctdef.crittoilim(trial,1) ...
+                  & data.time{trial} <= cfg.artfctdef.crittoilim(trial,2));
+          else
+              time = -cfg.trialdef.prestim:1/hdr.Fs:(cfg.trialdef.poststim-1/hdr.Fs);
+              % since our AO CPORT data fs will differ from LFP fs, we will
+              % test for this case and try to correct it using information
+              % from trl (time in samples) and from trialdef (time in time)
+              if length(time)~=length(rejecttrial)
+                  fs_resample = round(abs(trl(1,3)/cfg.trialdef.prestim));
+                  time = -cfg.trialdef.prestim:1/fs_resample:(cfg.trialdef.poststim-1/fs_resample);
+              end
+              if length(time)~=length(rejecttrial)
+                  ft_error('Sampling rates from hdr and data sample do not match.');
+              end
+              critInd = (time >= cfg.artfctdef.crittoilim(trial,1) ...
+                  & time <= cfg.artfctdef.crittoilim(trial,2));
+          end
+          if (any(critInd & rejecttrial))
+              count_complete_reject = count_complete_reject + 1;
+              trlCompletelyRemovedInd = [trlCompletelyRemovedInd trial];
+              continue;
+          else
+              trlnew = [trlnew; trl(trial,:)];
+              count_outsidecrit = count_outsidecrit + 1;
+          end
       else % no crittoilim checking required
         count_complete_reject = count_complete_reject + 1;
         trlCompletelyRemovedInd = [trlCompletelyRemovedInd trial];

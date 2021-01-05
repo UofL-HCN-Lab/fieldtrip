@@ -106,7 +106,7 @@ hasdata = exist('data', 'var');
 if ~hasdata
   cfg = ft_checkconfig(cfg, 'dataset2files', 'yes');
   cfg = ft_checkconfig(cfg, 'required', {'headerfile', 'datafile'});
-  hdr = ft_read_header(cfg.headerfile, 'headerformat', cfg.headerformat);
+  hdr = ft_read_header(cfg.headerfile, 'headerformat', cfg.headerformat, 'chantype', cfg.chantype);
 else
   data = ft_checkdata(data, 'datatype', 'raw', 'hassampleinfo', 'yes');
   cfg  = ft_checkconfig(cfg, 'forbidden', {'dataset', 'headerfile', 'datafile'});

@@ -320,7 +320,7 @@ if hasdata
   
   if ~isempty(cfg.trl)
     % reduce the input data to the requested trial segments
-    tmpcfg = keepfields(cfg, {'trl'});
+    tmpcfg = keepfields(cfg, {'trl','allowoverlap'});
     data = ft_redefinetrial(tmpcfg, data);
     [cfg, data] = rollback_provenance(cfg, data);
   end

@@ -24,6 +24,7 @@ function [spike] = ft_read_spike(filename, varargin)
 %   'neurosim_spikes'
 %   'wave_clus'
 %   'nwb'
+%   'osort'
 %
 % The output spike structure usually contains
 %   spike.label     = 1xNchans cell-array, with channel labels
@@ -332,6 +333,42 @@ switch spikeformat
       spike.label{k}     = sprintf('spikegroup%03d',k);
     end
     
+    case 'osort'
+        load(filename, 'useNegative', 'assignedNegative', 'newSpikesNegative', 'newTimestampsNegative'); % load the mat file
+        clusters = useNegative; % detected clusters
+        nclust = numel(clusters);
+        [p, f, x] = fileparts(filename);
+        
+        [~,pki] = max(newSpikesNegative,[],2); pki = mode(pki);
+        time_relpk = [(-pki+1):(size(newSpikesNegative,2)-pki)]/100000;
+        
+        [~,e] = regexp(p,'Block\w*/');
+        rawdatapath = p(1:(e-1));
+        rawfile = dir(fullfile(rawdatapath,'*.mat'));
+        datafilestr = '[lLrR][tT][0-9][dD][\w\W]+';
+        func1 = @(x) ~isempty(regexp(x.name,datafilestr, 'once'));
+        rawfile = rawfile(arrayfun(func1,rawfile));
+        rawfile = fullfile(rawdatapath,rawfile.name);
+        
+        lblidx = strfind(f,'_sorted');
+        channel = f(1:(lblidx-1));
+        spike.label     = cell(1,nclust);
+        spike.unit      = cell(1,nclust);
+        spike.waveform  = cell(1,nclust);
+        spike.timestamp = cell(1,nclust);
+        spike.hdr = ft_read_header(rawfile, 'headerformat', headerformat,'chantype','micro_hp');
+        spike.headerfile = rawfile;
+        spike.timereltopeak = time_relpk;
+        spike.waveformFs = 100000;
+        for cl = 1:nclust
+            unit_idx                  = assignedNegative==clusters(cl);
+            spike.label{cl}           = [channel '-' num2str(clusters(cl))];
+            spike.timestamp{cl}       = (newTimestampsNegative(unit_idx)/1e6)*spike.hdr.Fs - spike.hdr.begSample;
+            spike.waveform{cl}(1,:,:) = newSpikesNegative(unit_idx,:)';
+            spike.unit{cl}            = assignedNegative(unit_idx);
+        end
+        fprintf('note that osort timestamps are typically expressed in microsec and not in samples\n')
+        
   case 'nwb'
     ft_hastoolbox('MatNWB', 1);
     spike = read_nwb_spike(filename);

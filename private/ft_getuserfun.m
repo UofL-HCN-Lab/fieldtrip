@@ -35,16 +35,39 @@ function func = ft_getuserfun(func, prefix)
 %
 % $Id$
 
-if isa(func, 'function_handle')
-  % treat function handle as-is
-elseif isfunction(func) && ~iscompatwrapper(func)
-  func = str2func(func);
-elseif isfunction([prefix '_' func]) && ~iscompatwrapper([prefix '_' func])
-  func = str2func([prefix '_' func]);
-elseif isfunction(['ft_' prefix '_' func])
-  func = str2func(['ft_' prefix '_' func]);
+if isempty(prefix)
+    if isa(func, 'function_handle')
+    elseif isfunction(func) && ~iscompatwrapper(func)
+        func = str2func(func);
+    else
+        ft_warning(['no function by the name ''' func ''' could be found']);
+        func = [];
+    end
 else
-  ft_warning(['no function by the name ''' func ''', ''' prefix '_' func...
-    ''', or ''ft_' prefix '_' func ''' could be found']);
-  func = [];
+    if isa(func,'function_handle')
+    elseif isfunction([prefix '_' func]) && ~iscompatwrapper([prefix '_' func])
+        func = str2func([prefix '_' func]);
+    elseif isfunction(['ft_' prefix '_' func])
+        func = str2func(['ft_' prefix '_' func]);
+    elseif isfunction(func) && ~iscompatwrapper(func)
+        func = str2func(func);
+    else
+        ft_warning(['no function by the name ''' prefix '_' func...
+            ''', or ''ft_' prefix '_' func ''' could be found']);
+        func = [];
+    end
 end
+
+% if isa(func, 'function_handle')
+%   % treat function handle as-is
+% elseif isfunction(func) && ~iscompatwrapper(func)
+%   func = str2func(func);
+% elseif isfunction([prefix '_' func]) && ~iscompatwrapper([prefix '_' func])
+%   func = str2func([prefix '_' func]);
+% elseif isfunction(['ft_' prefix '_' func])
+%   func = str2func(['ft_' prefix '_' func]);
+% else
+%   ft_warning(['no function by the name ''' func ''', ''' prefix '_' func...
+%     ''', or ''ft_' prefix '_' func ''' could be found']);
+%   func = [];
+% end

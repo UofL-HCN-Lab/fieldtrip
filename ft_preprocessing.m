@@ -215,6 +215,7 @@ cfg.paddir         = ft_getopt(cfg, 'paddir', 'both');
 cfg.montage        = ft_getopt(cfg, 'montage', 'no');
 cfg.updatesens     = ft_getopt(cfg, 'updatesens', 'no');    % in case a montage or rereferencing is specified
 cfg.dataformat     = ft_getopt(cfg, 'dataformat');          % is passed to low-level function, empty implies autodetection
+cfg.fixjumps         = ft_getopt(cfg, 'fixjumps', 0);
 
 % these options relate to the actual preprocessing, it is necessary to specify here because of padding
 cfg.dftfilter      = ft_getopt(cfg, 'dftfilter', 'no');
@@ -224,6 +225,7 @@ cfg.bpfilter       = ft_getopt(cfg, 'bpfilter', 'no');
 cfg.bsfilter       = ft_getopt(cfg, 'bsfilter', 'no');
 cfg.medianfilter   = ft_getopt(cfg, 'medianfilter', 'no');
 cfg.padtype        = ft_getopt(cfg, 'padtype', 'data');
+cfg.transforms     = ft_getopt(cfg, 'transforms', {});        %2019.08.13 AG to do padding when user-defined transforms implemented
 
 % these options relate to the actual preprocessing, it is necessary to specify here because of channel selection
 cfg.reref          = ft_getopt(cfg, 'reref', 'no');
@@ -475,7 +477,8 @@ else
         strcmp(cfg.hpfilter, 'yes') || ...
         strcmp(cfg.bpfilter, 'yes') || ...
         strcmp(cfg.bsfilter, 'yes') || ...
-        strcmp(cfg.medianfilter, 'yes')
+        strcmp(cfg.medianfilter, 'yes') || ...
+        (isfield(cfg,'transforms') & ~isempty(cfg.transforms))
       padding = round(cfg.padding * hdr.Fs);
     else
       % no filtering will be done, hence no padding is necessary
@@ -597,6 +600,40 @@ else
       % includes datapadding
       dat = ft_read_data(cfg.datafile, 'header', hdr, 'begsample', begsample, 'endsample', endsample, 'chanindx', rawindx, 'checkboundary', strcmp(cfg.continuous, 'no'), 'dataformat', cfg.dataformat, headeropt{:});
       
+      if cfg.fixjumps & isfield(cfg.artfctdef.jump,'trial')
+          if islogical(cfg.fixjumps) | cfg.fixjumps==1
+              cfg.fixjumps = 'linear';
+          end
+%           trlidx = cfg.trl(i,1)<=cfg.artfctdef.jump.artifact(a2f,1) & ...
+%               cfg.trl(i,2)>=cfg.artfctdef.jump.artifact(a2f,2);
+%           trlartfcts = cfg.artfctdef.jump.artifact(trlidx,:);
+%           trlmaxchannel = cfg.artfctdef.jump.maxchannel(trlidx);
+          for a=1:size(cfg.artfctdef.jump.artifact,1)
+              ts = cfg.artfctdef.jump.artifact(a,:);
+              
+              if ts(1)<begsample
+                  continue
+              end
+              if ts(2)>endsample
+                  continue
+              end
+              ts = ts - begsample + 1;
+              
+%               chan = trlmaxchannel(a);
+%               ts = trlartfcts(a,:)-begsample+1;
+%               y1 = dat(chan,ts(1)); y2 = dat(chan,ts(2));
+%               fixedy = interp1(ts,[y1 y2],ts(1):ts(2),cfg.fixjumps);
+%               dat(chan,ts(1):ts(2)) = fixedy;
+              
+              for c=1:length(cfg.artfctdef.jump.badchannels)
+                  chan = cfg.artfctdef.jump.badchannels(c);
+                  y1 = dat(chan,ts(1)); y2 = dat(chan,ts(2));
+                  fixedy = interp1(ts,[y1 y2],ts(1):ts(2),cfg.fixjumps);
+                  dat(chan,ts(1):ts(2)) = fixedy;
+              end
+          end
+      end
+      
       % convert the data to another numeric precision, i.e. double, single or int32
       if ~isempty(cfg.precision)
         dat = cast(dat, cfg.precision);
@@ -611,7 +648,19 @@ else
       end
       
       % do the preprocessing on the padded trial data and remove the padding after filtering
-      [cutdat{i}, label, time{i}, cfg] = preproc(dat, hdr.label(rawindx), tim, cfg, begpadding, endpadding);
+      if isfield(cfg,'preprocfun') & ~isempty(cfg.preprocfun)
+          preprocfunSpecified = cfg.preprocfun;
+          cfg.preprocfun = ft_getuserfun(cfg.preprocfun, 'preprocfun');
+          
+          if isempty(cfg.preprocfun)
+              ft_error('the specified preprocfunfun ''%s'' was not found', preprocfunSpecified);
+          else
+              ft_info('evaluating preprocfunction ''%s''\n', func2str(cfg.preprocfun));
+          end
+          [cutdat{i}, label, time{i}, cfg] = feval(cfg.preprocfun,dat, hdr.label(rawindx), tim, cfg, begpadding, endpadding);
+      else
+          [cutdat{i}, label, time{i}, cfg] = preproc(dat, hdr.label(rawindx), tim, cfg, begpadding, endpadding);
+      end
       
       if isfield(cfg, 'export') && ~isempty(cfg.export)
         % write the processed data to an original manufacturer format file

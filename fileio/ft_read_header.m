@@ -2059,9 +2059,9 @@ switch headerformat
       chantype={'micro'};
     end
     
-    chantype_dict={'micro','macro',     'analog', 'micro_lfp','macro_lfp','micro_hp','add_analog','emg', 'eeg';...
-      'CRAW', 'CMacro_RAW','CANALOG', 'CLFP',     'CMacro_LFP',   'CSPK' ,'CADD_ANALOG','CEMG', 'CEEG'};
-    neuroomega_param={'_KHz','_KHz_Orig','_Gain','_BitResolution','_TimeBegin','_TimeEnd'};
+    chantype_dict = {'micro','macro',     'analog', 'micro_lfp','macro_lfp','micro_hp','eeg','add_analog','port';...
+      'CRAW','CMacro_RAW','CANALOG','CLFP','CMacro_LFP','CSPK','CEEG','CADD_ANALOG','CPORT'};
+    neuroomega_param = {'_KHz','_KHz_Orig','_Gain','_BitResolution','_TimeBegin','_TimeEnd'};
     
     %identifying channels to be loaded
     orig = matfile(filename);
@@ -2130,8 +2130,10 @@ switch headerformat
     end
     
     % building header
+    hdr.portFs      = orig.CPORT__1_KHz*1000;
     hdr.Fs          = Fs;
     hdr.nChans      = length(channels);
+    hdr.begSample   = T0*Fs;
     hdr.nSamples    = nSamples;
     hdr.nSamplesPre = 0;
     hdr.nTrials     = 1;

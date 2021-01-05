@@ -1650,7 +1650,8 @@ res = any(strcmp(filename,{d.name}));
 % SUBFUNCTION that checks for NeuroOmega mat file
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 function res = filetype_check_neuroomega_mat(filename)
-res=~isempty(regexp(filename,'[RL]T[1-5]D[-]{0,1}\d+\.\d+([+-]M){0,1}F\d+\.mat','once'));
+% res=~isempty(regexp(filename,'[RL]T[1-5]D[-]{0,1}\d+\.\d+([+-]M){0,1}F\d+\.mat','once'));
+res=~isempty(regexp(filename,'[lLrR][tT][0-9][dD]\W?[0-9]{1,2}\.[0-9]{3}[fF][0-9]+\.mat','once'));
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % SUBFUNCTION that checks whether the directory is neuralynx_cds

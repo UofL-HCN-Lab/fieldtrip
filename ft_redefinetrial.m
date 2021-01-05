@@ -103,6 +103,7 @@ cfg.feedback     = ft_getopt(cfg, 'feedback',  'yes');
 cfg.trl          = ft_getopt(cfg, 'trl',       []);
 cfg.length       = ft_getopt(cfg, 'length',    []);
 cfg.overlap      = ft_getopt(cfg, 'overlap',   0);
+cfg.allowoverlap = ft_getopt(cfg, 'allowoverlap',   false);
 
 % store original datatype
 dtype = ft_datatype(data);
@@ -271,7 +272,9 @@ elseif ~isempty(cfg.trl)
   
   for iTrl=1:size(newtrl, 1)
     
-    data.trial{iTrl} = ft_fetch_data(dataold, 'header', hdr, 'begsample', begsample(iTrl), 'endsample', endsample(iTrl), 'chanindx', 1:hdr.nChans, 'skipcheckdata', 1);
+%     data.trial{iTrl} = ft_fetch_data(dataold, 'header', hdr, 'begsample', begsample(iTrl), 'endsample', endsample(iTrl), 'chanindx', 1:hdr.nChans, 'skipcheckdata', 1);
+    data.trial{iTrl} = ft_fetch_data(dataold, 'header', hdr, 'begsample', begsample(iTrl), 'endsample', endsample(iTrl), 'chanindx', 1:hdr.nChans, 'skipcheckdata', 1, 'allowoverlap', cfg.allowoverlap);
+%     data.trial{iTrl} = ft_fetch_data(dataold, 'header', hdr, 'begsample', begsample(iTrl), 'endsample', endsample(iTrl), 'chanindx', 1:hdr.nChans, 'skipcheckdata', 1, 'allowoverlap', true);
     data.time{iTrl}  = offset2time(offset(iTrl), dataold.fsample, trllength(iTrl));
     
     % The following ensures correct handling of trialinfo.

@@ -170,6 +170,7 @@ cfg.artfctdef.zvalue.ntrial      = ft_getopt(cfg.artfctdef.zvalue, 'ntrial',    
 cfg.artfctdef.zvalue.channel     = ft_getopt(cfg.artfctdef.zvalue, 'channel',      {});
 cfg.artfctdef.zvalue.trlpadding  = ft_getopt(cfg.artfctdef.zvalue, 'trlpadding',   0);
 cfg.artfctdef.zvalue.fltpadding  = ft_getopt(cfg.artfctdef.zvalue, 'fltpadding',   0);
+cfg.artfctdef.zvalue.artpadtype  = ft_getopt(cfg.artfctdef.zvalue, 'artpadtype',   'time');
 cfg.artfctdef.zvalue.artpadding  = ft_getopt(cfg.artfctdef.zvalue, 'artpadding',   0);
 cfg.artfctdef.zvalue.interactive = ft_getopt(cfg.artfctdef.zvalue, 'interactive',  'no');
 cfg.artfctdef.zvalue.cumulative  = ft_getopt(cfg.artfctdef.zvalue, 'cumulative',   'yes');
@@ -206,7 +207,7 @@ hasdata = exist('data', 'var');
 if ~hasdata
   cfg = ft_checkconfig(cfg, 'dataset2files', 'yes');
   cfg = ft_checkconfig(cfg, 'required', {'headerfile', 'datafile'});
-  hdr = ft_read_header(cfg.headerfile, 'headerformat', cfg.headerformat);
+  hdr = ft_read_header(cfg.headerfile, 'headerformat', cfg.headerformat, 'chantype', cfg.chantype);
 else
   data = ft_checkdata(data, 'datatype', 'raw', 'hassampleinfo', 'yes');
   cfg  = ft_checkconfig(cfg, 'forbidden', {'dataset', 'headerfile', 'datafile'});
@@ -244,8 +245,11 @@ end
 
 trlpadding = round(cfg.artfctdef.zvalue.trlpadding*hdr.Fs);
 fltpadding = round(cfg.artfctdef.zvalue.fltpadding*hdr.Fs);
-artpadding = round(cfg.artfctdef.zvalue.artpadding*hdr.Fs);
-
+if strcmp(cfg.artfctdef.zvalue.artpadtype,'time')
+    artpadding    = round(cfg.artfctdef.zvalue.artpadding*hdr.Fs);
+else
+    artpadding = cfg.artfctdef.zvalue.artpadding;
+end
 trl(:,1)      = trl(:,1) - trlpadding;       % pad the trial with some samples, in order to detect
 trl(:,2)      = trl(:,2) + trlpadding;       % artifacts at the edges of the relevant trials.
 if size(trl,2)>= 3
@@ -263,6 +267,7 @@ else
 end
 
 numtrl        = size(trl,1);
+cfg.artfctdef.zvalue.trl = trl;              % remember where we are going to look for artifacts
 cfg.artfctdef.zvalue.channel = ft_channelselection(cfg.artfctdef.zvalue.channel, hdr.label);
 chanindx      = match_str(hdr.label, cfg.artfctdef.zvalue.channel);
 nchan         = length(chanindx);
@@ -579,7 +584,8 @@ opt = getappdata(h, 'opt');
 % convert to one long vector
 dum = zeros(1,max(opt.trl(:,2)));
 for trlop=1:opt.numtrl
-  dum(opt.trl(trlop,1):opt.trl(trlop,2)) = opt.artval{trlop};
+  dum(opt.trl(trlop,1):opt.trl(trlop,2)) = ...
+      dum(opt.trl(trlop,1):opt.trl(trlop,2)) | opt.artval{trlop};
 end
 artval = dum;
 
@@ -587,6 +593,14 @@ artval = dum;
 artbeg = find(diff([0 artval])== 1);
 artend = find(diff([artval 0])==-1);
 artifact = [artbeg(:) artend(:)];
+
+trlind = zeros(size(artifact,1),1);
+chind = zeros(size(artifact,1),1);
+for a=1:size(artifact,1)
+    trlind(a) = find(cfg.trl(:,1)-trlpadding<=artifact(a,1),1,'last');
+    [~, indx] = max(opt.zval{trlind(a)});
+    chind(a) = opt.zindx{trlind(a)}(indx);
+end
 
 if strcmp(cfg.artfctdef.zvalue.artfctpeak, 'yes')
   cnt    = 1;
@@ -644,9 +658,14 @@ elseif strcmp(cfg.representation, 'table') && isnumeric(artifact)
 end
 
 % remember the details that were used here and store the detected artifacts
-cfg.artfctdef.zvalue.trl      = trl;              % remember where we have been looking for artifacts
+% cfg.artfctdef.zvalue.trl      = trl;              % remember where we have been looking for artifacts
+cfg.artfctdef.zvalue.trial    = trlind;
 cfg.artfctdef.zvalue.cutoff   = opt.threshold;    % remember the threshold that was used
 cfg.artfctdef.zvalue.artifact = artifact;
+cfg.artfctdef.zvalue.maxchannel  = chind;
+
+% also update the threshold
+cfg.artfctdef.zvalue.cutoff   = opt.threshold;
 
 ft_notice('detected %d artifacts\n', size(artifact,1));
 
@@ -677,8 +696,30 @@ for trlop=1:opt.numtrl
   % pad the artifacts
   artbeg = find(diff([0 artval{trlop}])== 1);
   artend = find(diff([artval{trlop} 0])==-1);
-  artbeg = artbeg - opt.artpadding;
-  artend = artend + opt.artpadding;
+  if strcmp(opt.cfg.artfctdef.zvalue.artpadtype,'time')
+      artbeg = artbeg - opt.artpadding;
+      artend = artend + opt.artpadding;
+  else
+      if opt.thresholdsum
+          mn = mean(opt.zsum{trlop});
+          sd = std(opt.zsum{trlop});
+          threshold = mn + opt.artpadding*sd;
+          zdata = opt.zsum{trlop};
+      else
+          mn = mean(opt.zmax{trlop});
+          sd = std(opt.zmax{trlop});
+          threshold = mn + opt.artpadding*sd;
+          zdata = opt.zmax{trlop};
+      end
+      for artlop=1:length(artbeg)
+          flp_zbg = fliplr(zdata(1:artbeg(artlop)));
+          idx = find(flp_zbg<threshold,1,'first'); if isempty(idx),idx=0;end
+          artbeg(artlop) = artbeg(artlop) - idx - round(0.075*opt.hdr.Fs);
+          zend = zdata(artend(artlop):end);
+          idx = find(zend<threshold,1,'first'); if isempty(idx),idx=0;end
+          artend(artlop) = artend(artlop) + idx + round(0.075*opt.hdr.Fs);
+      end
+  end
   artbeg(artbeg<1) = 1;
   artend(artend>length(artval{trlop})) = length(artval{trlop});
   for artlop=1:length(artbeg)
@@ -711,6 +752,31 @@ for trlop = find(opt.keep<0 & opt.trialok==1)
   artend = find(diff([artval{trlop} 0])==-1);
   artbeg = artbeg - opt.artpadding;
   artend = artend + opt.artpadding;
+  
+%   if strcmp(opt.cfg.artfctdef.zvalue.artpadtype,'time')
+%       artbeg = artbeg - opt.artpadding;
+%       artend = artend + opt.artpadding;
+%   else
+%       if opt.thresholdsum
+%           mn = mean(opt.zsum{trlop});
+%           sd = std(opt.zsum{trlop});
+%           threshold = mn + opt.artpadding*sd;
+%           zdata = opt.zsum{trlop};
+%       else
+%           mn = mean(opt.zmax{trlop});
+%           sd = std(opt.zmax{trlop});
+%           threshold = mn + opt.artpadding*sd;
+%           zdata = opt.zmax{trlop};
+%       end
+%       for artlop=1:length(artbeg)
+%           flp_zbg = fliplr(zdata(1:artbeg(artlop)));
+%           idx = find(flp_zbg<threshold,1,'first'); if isempty(idx),idx=0;end
+%           artbeg(artlop) = artbeg(artlop) - idx - round(0.075*opt.hdr.Fs);
+%           zend = zdata(artend(artlop):end);
+%           idx = find(zend<threshold,1,'first'); if isempty(idx),idx=0;end
+%           artend(artlop) = artend(artlop) + idx + round(0.075*opt.hdr.Fs);
+%       end
+%   end
   artbeg(artbeg<1) = 1;
   artend(artend>length(artval{trlop})) = length(artval{trlop});
   if ~isempty(artbeg)
@@ -729,8 +795,34 @@ for trlop = find(opt.keep==-2 & opt.trialok==0)
   % pad the artifacts
   artbeg = find(diff([0 artval{trlop}])== 1);
   artend = find(diff([artval{trlop} 0])==-1);
-  artbeg = artbeg - opt.artpadding;
-  artend = artend + opt.artpadding;
+  if strcmp(opt.cfg.artfctdef.zvalue.artpadtype,'time')
+      artbeg = artbeg - opt.artpadding;
+      artend = artend + opt.artpadding;
+  end
+%   if strcmp(opt.cfg.artfctdef.zvalue.artpadtype,'time')
+%       artbeg = artbeg - opt.artpadding;
+%       artend = artend + opt.artpadding;
+%   else
+%       if opt.thresholdsum
+%           mn = mean(opt.zsum{trlop});
+%           sd = std(opt.zsum{trlop});
+%           threshold = mn + opt.artpadding*sd;
+%           zdata = opt.zsum{trlop};
+%       else
+%           mn = mean(opt.zmax{trlop});
+%           sd = std(opt.zmax{trlop});
+%           threshold = mn + opt.artpadding*sd;
+%           zdata = opt.zmax{trlop};
+%       end
+%       for artlop=1:length(artbeg)
+%           flp_zbg = fliplr(zdata(1:artbeg(artlop)));
+%           idx = find(flp_zbg<threshold,1,'first'); if isempty(idx),idx=0;end
+%           artbeg(artlop) = artbeg(artlop) - idx - round(0.075*opt.hdr.Fs);
+%           zend = zdata(artend(artlop):end);
+%           idx = find(zend<threshold,1,'first'); if isempty(idx),idx=0;end
+%           artend(artlop) = artend(artlop) + idx + round(0.075*opt.hdr.Fs);
+%       end
+%   end
   artbeg(artbeg<1) = 1;
   artend(artend>length(artval{trlop})) = length(artval{trlop});
   if ~isempty(artbeg)

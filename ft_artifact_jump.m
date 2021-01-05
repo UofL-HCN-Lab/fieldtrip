@@ -122,6 +122,9 @@ cfg.artfctdef.jump.trlpadding = ft_getopt(cfg.artfctdef.jump, 'trlpadding', 0.0)
 cfg.artfctdef.jump.fltpadding = ft_getopt(cfg.artfctdef.jump, 'fltpadding', 0.0);
 cfg.artfctdef.jump.artpadding = ft_getopt(cfg.artfctdef.jump, 'artpadding', 0.0);
 
+if isfield(cfg,'fixjumps') & cfg.fixjumps
+    cfg.artfctdef.jump.cumulative = 'yes';
+end
 % construct a temporary configuration that can be passed onto FT_ARTIFACT_ZVALUE
 tmpcfg                  = cfg;
 tmpcfg.artfctdef.zvalue = cfg.artfctdef.jump;

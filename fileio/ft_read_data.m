@@ -1286,10 +1286,12 @@ switch dataformat
   case 'neuroomega_mat'
     % These are MATLAB *.mat files created by the software 'Map File
     % Converter' from the original .mpx files recorded by NeuroOmega
-    dat=zeros(hdr.nChans,endsample - begsample + 1);
-    for i=1:hdr.nChans
-      v=double(hdr.orig.orig.(hdr.label{i}));
-      v=v*hdr.orig.orig.(char(strcat(hdr.label{i},'_BitResolution')));
+    dat=zeros(length(chanindx),endsample - begsample + 1);
+%     dat=zeros(hdr.nChans,endsample - begsample + 1);
+    for i=1:length(chanindx) % changed from hdr.nChans
+      v=double(hdr.orig.(hdr.label{chanindx(i)}));
+      v=v*hdr.orig.(char(strcat(hdr.label{chanindx(i)},'_BitResolution')))/...
+          hdr.orig.(char(strcat(hdr.label{chanindx(i)},'_Gain'))); % added /gain from recommendation from AO - AMG 05/09/19
       dat(i,:)=v(begsample:endsample); %channels sometimes have small differences in samples
     end
     
