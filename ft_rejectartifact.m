@@ -574,6 +574,9 @@ end
 
 if isempty(cfg.trl)
   ft_error('No trials left after artifact rejection.')
+  if ~isfield(data,'event')
+      data.event = struct('type',{},'sample',{},'value',{},'task',{},'block',{},'trial',{},'offset',{},'duration',{});
+  end
 else
   if hasdata && ~strcmp(cfg.artfctdef.reject, 'nan') % Skip this step to avoid removing parts that should be filled with NaNs
     % apply the updated trial definition on the data
@@ -583,6 +586,10 @@ else
     % restore the provenance information
     [cfg, data] = rollback_provenance(cfg, data);
   end
+end
+
+if isfield(cfg,'event')
+    cfg.event(trlCompletelyRemovedInd) = [];
 end
 
 % do the general cleanup and bookkeeping at the end of the function
