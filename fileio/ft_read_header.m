@@ -2142,10 +2142,10 @@ switch headerformat
     hdr.chanunit    = repmat({'uV'},  size(hdr.label));
     % store the complete information in hdr.orig
     % ft_read_data and ft_read_event will get it from there
-    hdr.orig        = [];
-    hdr.orig.orig   = orig;
-    hdr.orig.chaninfo = chaninfo;
-    hdr.orig.fields = fields_orig;
+    hdr.orig        = orig;
+%     hdr.orig.orig   = orig;
+%     hdr.orig.chaninfo = chaninfo;
+%     hdr.orig.fields = fields_orig;
     
   case 'neuroprax_eeg'
     orig = np_readfileinfo(filename);

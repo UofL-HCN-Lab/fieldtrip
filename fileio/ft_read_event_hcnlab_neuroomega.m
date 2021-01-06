@@ -116,8 +116,13 @@ else
         skip=false;
         for j=1:size(data,2)
             event(j).sample = nan;
-            if data(2,j)==9
-                trl_end_idx = find(data(2,j:end)==18,1,'first');
+            if data(2,j)==9 %find each trial start
+                trl_end_idx = find(data(2,j+1:end)==9,1,'first'); %find next trial start (to indicate a full trial)
+                if isempty(trl_end_idx)
+                    % if empty, must be at last trial, so end idx is length
+                    % of data
+                    trl_end_idx = size(data,2)-j+1;
+                end
                 stim_idx = j+find(ismember(data(2,j+1:j+trl_end_idx-1),4),1,'first');
                 abort_idx = j+find(ismember(data(2,j+1:j+trl_end_idx-1),[15 16 17]),1,'first');
                 if isempty(stim_idx) & ~isempty(abort_idx) % trial aborted before stimulus, skip
