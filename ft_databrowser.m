@@ -517,7 +517,9 @@ artifact = artifact(sel==1);
 artlabel = artlabel(sel==1);
 
 % make artdata representing all artifacts in a "raw data" format
-endsample = max(trlorg(:,2));
+max_arts = cellfun(@max,cellfun(@max,artifact,'UniformOutput',false),'UniformOutput',false);
+max_art = cellfun(@max,max_arts(cellfun(@(x) ~isempty(x),(cellfun(@max,cellfun(@max,artifact,'UniformOutput',false),'UniformOutput',false)))));
+endsample = max([trlorg(:,2);max_art]);
 
 artdata = [];
 artdata.trial{1}       = artifact2boolvec(artifact, 'endsample', endsample); % every artifact is a "channel"
