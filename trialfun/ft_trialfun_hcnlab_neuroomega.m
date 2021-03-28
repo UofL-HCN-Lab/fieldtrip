@@ -173,6 +173,10 @@ for i=sel
     else
       val = [val; nan];
     end
+  elseif trlbeg<=0
+      error(['Trial begin time for trial ' num2str(i) ' is before the start of the dataset. Please shorten pre-stimulus time.'])
+  else % trlend>hdr.nSamples*hdr.nTrials
+      error(['Trial end time for trial ' num2str(i) ' is after the end of the dataset. Please shorten post-stimulus time.'])
   end
 end
 
