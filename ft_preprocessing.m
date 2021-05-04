@@ -374,8 +374,26 @@ if hasdata
     
     data.trial{i} = ft_preproc_padding(data.trial{i}, cfg.padtype, begpadding, endpadding);
     data.time{i}  = ft_preproc_padding(data.time{i}, 'nan',        begpadding, endpadding); % pad time-axis with nans (see bug2220)
+    
+    % added for fixing GPi button artifacts with NaNs --> AMG 04/05/21
     % do the filtering etc.
-    [dataout.trial{i}, dataout.label, dataout.time{i}, cfg] = preproc(data.trial{i}, data.label,  data.time{i}, cfg, begpadding, endpadding);
+    if isfield(cfg,'preprocfun') & ~isempty(cfg.preprocfun)
+        preprocfunSpecified = cfg.preprocfun;
+        cfg.preprocfun = ft_getuserfun(cfg.preprocfun, 'preprocfun');
+        
+        if isempty(cfg.preprocfun)
+            ft_error('the specified preprocfunfun ''%s'' was not found', preprocfunSpecified);
+        else
+            ft_info('evaluating preprocfunction ''%s''\n', func2str(cfg.preprocfun));
+        end
+        [dataout.trial{i}, dataout.label, dataout.time{i}, cfg] = feval(cfg.preprocfun,data.trial{i}, data.label, data.time{i}, cfg, begpadding, endpadding);
+    else
+        [dataout.trial{i}, dataout.label, dataout.time{i}, cfg] = preproc(data.trial{i}, data.label,  data.time{i}, cfg, begpadding, endpadding);
+    end
+    
+    % original code
+%     % do the filtering etc.
+%     [dataout.trial{i}, dataout.label, dataout.time{i}, cfg] = preproc(data.trial{i}, data.label,  data.time{i}, cfg, begpadding, endpadding);
     
   end % for all trials
   
@@ -601,22 +619,16 @@ else
       dat = ft_read_data(cfg.datafile, 'header', hdr, 'begsample', begsample, 'endsample', endsample, 'chanindx', rawindx, 'checkboundary', strcmp(cfg.continuous, 'no'), 'dataformat', cfg.dataformat, headeropt{:});
       
       if cfg.fixjumps & isfield(cfg.artfctdef.jump,'trial')
-          if islogical(cfg.fixjumps) | cfg.fixjumps==1
+          if cfg.fixjumps==1
               cfg.fixjumps = 'linear';
           end
 %           trlidx = cfg.trl(i,1)<=cfg.artfctdef.jump.artifact(a2f,1) & ...
 %               cfg.trl(i,2)>=cfg.artfctdef.jump.artifact(a2f,2);
 %           trlartfcts = cfg.artfctdef.jump.artifact(trlidx,:);
 %           trlmaxchannel = cfg.artfctdef.jump.maxchannel(trlidx);
-          for a=1:size(cfg.artfctdef.jump.artifact,1)
+          if ismember(i,cfg.artfctdef.jump.trial)
+              a = i==cfg.artfctdef.jump.trial;
               ts = cfg.artfctdef.jump.artifact(a,:);
-              
-              if ts(1)<begsample
-                  continue
-              end
-              if ts(2)>endsample
-                  continue
-              end
               ts = ts - begsample + 1;
               
 %               chan = trlmaxchannel(a);
@@ -628,7 +640,59 @@ else
               for c=1:length(cfg.artfctdef.jump.badchannels)
                   chan = cfg.artfctdef.jump.badchannels(c);
                   y1 = dat(chan,ts(1)); y2 = dat(chan,ts(2));
-                  fixedy = interp1(ts,[y1 y2],ts(1):ts(2),cfg.fixjumps);
+                  
+                  switch cfg.fixjumps
+                      case 'linear'
+                        fixedy = interp1(ts,[y1 y2],ts(1):ts(2),cfg.fixjumps);
+                      case 'nan'
+                        fixedy = nan(size(ts(1):ts(2)));
+                      case 'noise'
+                          switch cfg.chantype
+                              case 'micro_hp'
+                                  tmpdat = dat(chan,:);
+                                  tmpdat(ts(1):ts(2)) = nan;
+                                  mn = nanmean(tmpdat);
+                                  sd = nanstd(tmpdat);
+                                  fixedy = sd*randn(size(ts(1):ts(2))+[0 200]) + mn;
+                                  fixedy = buttfilt(fixedy,[300 9000],hdr.Fs,'bandpass',1);
+                                  fixedy = fixedy(101:end-100);
+                              otherwise
+                                  error(['Fix-jumps option "noise" not yet defined for channel type ' cfg.chantype '.']);
+                          end
+                      case 'kalman'
+                          if ~isfield(cfg,'kalmancfg') || isempty(cfg.kalmancfg)
+                              tmpcfg_(1).interactive = true;
+                              tmpcfg_.arorders = [2, 3, 4];
+                              tmpcfg_.bestarmodel = [];
+                              tmpcfg_.oeorders = [2, 2, 1;
+                                  3, 3, 1;
+                                  3, 4, 1;
+                                  4, 4, 1;
+                                  4, 5, 1;
+                                  5, 5, 1;
+                                  5, 6, 1;
+                                  6, 6, 1];
+                              tmpcfg_.bestoemodel = [];
+                              tmpcfg_.varts = logspace(-5,2,8); % 0.1 is what was used in Morbidi et al (2007)
+                              tmpcfg_.alphas = [0.3 logspace(-4,0,5)];  % 0.3 is what was used in Morbidi et al (2007)
+                              tmpcfg_.padding = (cfg.padding - cfg.prestim - cfg.poststim)/2;
+                              tmpcfg_.include_nu_decay = false;
+                              if c==1
+                                  % recheck kalman params at every new
+                                  % trial (for first bad channel only)
+                                  tmpcfg_.bestarmdlix = [];
+                                  tmpcfg_.arftct_zeros = [];
+                                  tmpcfg_.bestoemdlix = [];
+                                  tmpcfg_.frst_artfct_endix = [];
+                                  tmpcfg_.bestvart = [];
+                                  tmpcfg_.bestalpha = [];
+                              end
+                          else
+                              tmpcfg_ = cfg.kalmancfg;
+                          end
+                          tmpcfg_.Fs = ft_getopt(tmpcfg_, 'Fs', hdr.Fs);
+                          [fixedy, tmpcfg_] = ft_preproc_kalman(dat(chan,ts(1):ts(2)), tmpcfg_);
+                  end
                   dat(chan,ts(1):ts(2)) = fixedy;
               end
           end

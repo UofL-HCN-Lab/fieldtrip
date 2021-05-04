@@ -714,10 +714,10 @@ for trlop=1:opt.numtrl
       for artlop=1:length(artbeg)
           flp_zbg = fliplr(zdata(1:artbeg(artlop)));
           idx = find(flp_zbg<threshold,1,'first'); if isempty(idx),idx=0;end
-          artbeg(artlop) = artbeg(artlop) - idx - round(0.075*opt.hdr.Fs);
+          artbeg(artlop) = artbeg(artlop) - idx - round(0.05*opt.hdr.Fs);
           zend = zdata(artend(artlop):end);
           idx = find(zend<threshold,1,'first'); if isempty(idx),idx=0;end
-          artend(artlop) = artend(artlop) + idx + round(0.075*opt.hdr.Fs);
+          artend(artlop) = artend(artlop) + idx + round(0.05*opt.hdr.Fs);
       end
   end
   artbeg(artbeg<1) = 1;
