@@ -1,6 +1,8 @@
 function [data, cfg] = ft_preproc_kalman(data,cfg)
+% see Morbidi et al. (J Neurosci Meth 2007; doi:10.1016/j.jneumeth.2006.12.013)
 
-% reverse data so artifacts have positive peaks
+% reverse data so artifacts have positive peaks (this seems to generally
+% improve the OE modeling)
 data = -data;
 
 % set the defaults
@@ -38,6 +40,8 @@ params_found_prev = [
 
 if ~all(params_found_prev)
     % use previously determined parameters (if available in notes.txt)
+    % see descriptions of these parameters in the functions that determine
+    % them below...
     resp = input('Do you have previously determined parameters for this trial (yes/no)?\n','s');
     
     if strncmpi('yes',resp,length(resp))
@@ -64,7 +68,7 @@ end
 % do AR modeling
 [cfg.bestarmodel, cfg.bestarmdlix] = best_ar_model(data,cfg);
 
-% do PE modeling
+% do OE modeling
 [cfg.bestoemodel, cfg.bestoemdlix, cfg.artifact_starts] = best_oe_model(data,cfg);
 
 % get best filter parameters & clean the data
@@ -82,12 +86,13 @@ ar_orders = cfg.arorders;
 data_clean_sample = data(1:Nsamp)';
 
 if ~isempty(cfg.bestarmdlix)
+    % use previously found best ar model order if known
     bestarmdlix = cfg.bestarmdlix;
     mdl = arima('arlags',1:ar_orders(bestarmdlix),'constant',1);
     preidx = 1:mdl.P;
     estidx = (mdl.P + 1):Nsamp;
     [best_mdl,~,~,~] = estimate(mdl,data_clean_sample(estidx),'y0',data_clean_sample(preidx));
-else
+else % find best
     ar_mdls = cell(length(ar_orders)+1,5);
     ar_mdls(1,:) = {'Model', 'Info', 'Residual', 'Estimate', 'Fit Percent'};
     
@@ -95,26 +100,30 @@ else
     f2 = figure('name','AR Zoomed');
     f3 = figure('name','Residuals');
     for m=1:length(ar_orders)
+        % this defines the AR model
         mdl = arima('arlags',1:ar_orders(m),'constant',1);
         preidx = 1:mdl.P;
         estidx = (mdl.P + 1):Nsamp;
         [mdl_fit,~,~,info] = estimate(mdl,data_clean_sample(estidx),'y0',data_clean_sample(preidx));
-        mdl_resid = infer(mdl_fit,data_clean_sample(estidx),'Y0',data_clean_sample(preidx));
-        mdl_yhat = data_clean_sample(estidx) - mdl_resid;
-        mdl_prct = 1-goodnessOfFit(mdl_yhat,data_clean_sample(estidx),'nrmse');
+        mdl_resid = infer(mdl_fit,data_clean_sample(estidx),'Y0',data_clean_sample(preidx)); % residuals
+        mdl_yhat = data_clean_sample(estidx) - mdl_resid; % model prediction
+        mdl_prct = 1-goodnessOfFit(mdl_yhat,data_clean_sample(estidx),'nrmse'); % fit %
         
         ar_mdls(m+1,:) = {mdl_fit, info, mdl_resid, mdl_yhat, mdl_prct};
         
         if cfg.interactive
             figure(f1);
             subplot(length(ar_orders),1,m);
+            % compare data to modeled data
             plot(time_sample(estidx),data_clean_sample(estidx),'b',time_sample(estidx),mdl_yhat,'r--','LineWidth',2);
             
             figure(f2);
             subplot(length(ar_orders),1,m);
+            % compare data to modeled data (zoomed in)
             plot(time_sample(end-500:end),data_clean_sample(end-500:end),'b',time_sample(end-500:end),mdl_yhat(end-500:end),'r--','LineWidth',2);
             
             figure(f3);
+            % plot residuals
             subplot(length(ar_orders),1,m);
             plot(mdl_yhat,mdl_resid,'.');
             
@@ -125,17 +134,20 @@ else
             end
         end
     end
+    % user is prompted to identify index of best AR model from following
+    % graph based on fit %. i use a simple "elbow" method
     if cfg.interactive
         figure(f1);xlabel('Time (s)');
         figure(f2);ylabel('Time (s)');
         figure(f3);ylabel('\muV');
         
         f4=figure();
+        % plot fit % by model
         plot([ar_mdls{2:end,5}],'o-');
         ylabel('Fit');
         xlabel('AR Model');
         
-        bestarmdlix = input('input index for best AR model.\n');
+        bestarmdlix = input('input index for best AR model.\n'); % input INDEX of best order, NOT best order value
         
         close([f1 f2 f3 f4]);
     else
@@ -147,11 +159,12 @@ end
 end
 
 function [best_mdl, bestoemdlix, art_strts] = best_oe_model(data,cfg)
-% a. 5 samples before & 35 samples after the artifact (1024 Hz)
+% a. 10 samples before & 35 samples after the artifact
 oe_orders = cfg.oeorders;
 oe_mdls = cell(size(oe_orders,1)+1,3);
 oe_mdls(1,:) = {'Model', 'Estimate', 'Fit Percent'};
 
+% clipped artifact
 strt = 10;
 nd = 35;
 artBeg = fix(cfg.padding*cfg.Fs) - strt;
@@ -162,6 +175,10 @@ artifact = data(artBeg:artEnd)';
 % u_t = zeros(size(artifact));  u_t(strt) = 1; %% THIS DOES NOT WORK
 
 
+% here, we want to identify the zero-crossings of the major artifact peaks.
+% the artifact is plotted along with the mean+sd. any peak above the dashed
+% line I considered a significant peak, worthy of identifying the
+% zero-crossing index for
 mn = mean(artifact);
 sd = std(artifact);
 if ~isempty(cfg.arftct_zeros)
@@ -171,7 +188,7 @@ else
         figure;
         plot(artifact); hold on
         plot(1:length(artifact),(mn+sd)*ones(size(artifact)),'k--');
-        art_strts = input('input indices of zero crossings prior to each artifact peak.\n');
+        art_strts = input('input indices of zero crossings prior to each artifact peak that crosses the threshold.\n');
         close(gcf);
     else
         idx_sd = artifact>=mn+sd;
@@ -193,25 +210,29 @@ art_strts = art_strts + artBeg - 1;
 % u_t(strt:(end-nd)) = 1/(artEnd-nd-(artBeg+start)+1); %% THIS DOES NOT WORK
 data_obj = iddata(artifact,u_t,1);
 if ~isempty(cfg.bestoemdlix)
+    % if previous best exists, use it
     bestoemdlix = cfg.bestoemdlix;
     best_mdl = oe(data_obj,oe_orders(bestoemdlix,:));
-else
+else % find best
     oefigs = zeros(size(oe_orders,1),1);
     for m=1:size(oe_orders,1)
-        sys = oe(data_obj,oe_orders(m,:));
-        [yhat,fit] = compare(data_obj,sys);
+        sys = oe(data_obj,oe_orders(m,:)); % oe model object
+        [yhat,fit] = compare(data_obj,sys); % model comparison object and fit info
         oefigs(m) = figure;
         subplot(1,3,1);
-        compare(data_obj,sys);
+        compare(data_obj,sys); % plots comparison of data and model
         subplot(1,3,2);
         foo = get(yhat);
-        plot(1:length(artifact),artifact,'-b',1:length(artifact),artifact-foo.OutputData{1},'--r');
+        plot(1:length(artifact),artifact,'-b',1:length(artifact),artifact-foo.OutputData{1},'--r'); % plots artifact vs. signal after subtracting artifact
         subplot(1,3,3);
-        pzmap(sys);
+        pzmap(sys); % plots pole-zero map of oe model. generally want all poles within the unit circle, and poles not "too close" to zeros. 
+                    % poles close to zeros suggests an unstable model and that a simpler model is more appropriate
         
         oe_mdls(m+1,:) = {sys, yhat, fit/100};
     end
     
+    % user is prompted to identify index of best OE model from following
+    % graph based on fit %. i use a simple "elbow" method
     if cfg.interactive
         figure();
         plot([oe_mdls{2:end,3}],'o-'); axis tight;
@@ -245,7 +266,8 @@ function [best_eeg_hat, best_var_T, best_alpha] = find_kalman_params_and_filter(
 
 var_Ts = cfg.varts;
 alphas = cfg.alphas;
-tau = 30;
+tau = 30; % max sample delay for testing quality of Kalman filter
+% see Morbidi et al. (J Neurosci Meth 2007; doi:10.1016/j.jneumeth.2006.12.013)
 tau_0 = tau+1;
 tau_not0 = setdiff(1:(2*tau+1),tau_0);
 strt = 10;
@@ -257,6 +279,7 @@ tmpcfg = [];
 t_s = fix(cfg.padding*cfg.Fs) + 1;
 tmpcfg(1).t_s = t_s;
 
+% determine sample index of end of first artifact peak
 if ~isempty(cfg.frst_artfct_endix)
     pk = cfg.frst_artfct_endix;
     pk = pk + artBeg - 1;
@@ -265,7 +288,8 @@ else
     if cfg.interactive
         figure();
         plot(data(artBeg:artEnd));
-        pk = input('input sample index of the end of the first artifact peak.\n');
+        pk = input('input sample index of the end of the first artifact peak.\n'); % input last positive index of first peak (i.e., 
+                                                                                % sample before the signal crosses 0 after first peak)
         close(gcf);
         pk = pk + artBeg - 1;
         d = pk - t_s;
@@ -276,6 +300,9 @@ end
 tmpcfg.d = d;
 d_tot = artEnd - t_s;
 
+% below builds the kalman filter model
+% see Morbidi et al. (J Neurosci Meth 2007;
+% doi:10.1016/j.jneumeth.2006.12.013) for these definitions
 % - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 % state-space model for EEG
 % x_E(t+1) = A_E*x_E(t) + G_E*e_E(t), where e_E(t)->WN(0,var_E)
@@ -313,9 +340,10 @@ tmpcfg.var_nu = var_nu;
 
 u_t = zeros(size(data));  u_t(cfg.artifact_starts) = 1;
 tmpcfg.u_t = u_t;
+
 %%%%%%%%
 %%%%%%%% NEXT: try implementing state-space model with MATLAB's built-in
-%%%%%%%% kalman function
+%%%%%%%% kalman function --> never got to (AMG 05/14/2021)
 %%%%%%%%
 
 % uy = impulse(st_sp);
@@ -362,9 +390,12 @@ tmpcfg.Q_time1 = Q_time1;
 % ------------------------------ START HERE -------------------------------
 % add option of no eta_time2 (no decay of artifact), fix eta_t, R_t and Rix
 % in kalman_local when tmpcfg.include_nu_decay = false
-%
+% never got to (AMG 05/14/2021)
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %
 % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %
+
+% see Morbidi et al. (J Neurosci Meth 2007;
+% doi:10.1016/j.jneumeth.2006.12.013) for these definitions
 tmpcfg.include_nu_decay = cfg.include_nu_decay;
 if tmpcfg.include_nu_decay
     eta_time1 = t_s:(t_s+d);
@@ -402,6 +433,8 @@ f_prev = figure();
 f_cur1 = figure();
 f_cur2 = figure();
 for v=1:length(var_Ts)
+    % below if statement just skips rest of var_Ts if best var_T was
+    % provided
     if ~isempty(cfg.bestvart) && v==1
         var_T = cfg.bestvart;
     elseif isempty(cfg.bestvart)
@@ -423,7 +456,7 @@ for v=1:length(var_Ts)
         else
             continue
         end
-        [results] = kalman_local(data,tmpcfg);
+        [results] = kalman_local(data,tmpcfg); % does the filtering
         
         eeg_hat = results.eeg_hat;
         eeg_hat_byalpha(a,:) = eeg_hat;
@@ -447,6 +480,7 @@ for v=1:length(var_Ts)
         
         
         % independence & whiteness calculations
+        % see Morbidi et al. (J Neurosci Meth 2007; doi:10.1016/j.jneumeth.2006.12.013)
         ix = 1;
         for t=-tau:tau
             Ns(ix) = N - abs(t);
@@ -481,6 +515,7 @@ for v=1:length(var_Ts)
         % spectal comparison of AR model of clean LFP and cur_clean
         cur_eeg_rmse = sqrt(mean((eeg_hat_sample - data_clean_sample).^2));
         
+        % compare power spectra of original and filtered signals
         eeg_y = fft(hann(length(data_clean_sample))'.*data_clean_sample);
         eeg_hat_y = fft(hann(length(eeg_hat_sample))'.*eeg_hat_sample);
         
@@ -496,6 +531,10 @@ for v=1:length(var_Ts)
         
         cur_pow_rmse = sqrt(mean((power_hat_y - power_y).^2));
         
+        % this is meant to serve as a way to compare the fits of the kalman
+        % filter with different alpha, var_T params. however, it is
+        % unfinished and does not work as intended. thus, you should always
+        % run ft_preproc_kalman in interactive mode (cfg.interactive = true)
         cur = [cur_white cur_ind 1/cur_eeg_rmse 1/cur_pow_rmse];
         
         % if current results better than previous results, replace
@@ -547,6 +586,8 @@ for v=1:length(var_Ts)
             title('Power comparison');
             
             % plot comparison of cur_clean and trial_data
+            % use this figure to compare previous best Kalman filter with
+            % Kalman filters using current var_T and all alphas
             figure(f_cur1);
             for a=1:length(alphas)
                 subplot(length(alphas),1,a)
@@ -559,6 +600,8 @@ for v=1:length(var_Ts)
             xlabel('Time (s)');
             ylabel('\muV');
             
+            % plot comparison of previous best artifact model with artifact
+            % models at current var_T and across all alphas
             figure(f_cur2);
             plot(ix,artfct_prevbest(:,ix),'k:','linewidth',2);
             hold on;
@@ -601,6 +644,9 @@ for v=1:length(var_Ts)
             xlabel('Frequency (Hz)');
             ylabel('Power');
             
+            % user inputs row number of best filter by reviewing figure f_cur1
+            % input empty vector ([]) if previous filter better than all
+            % current ones
             best_ix = input('input row number of best filter. if none of these options are better than previous best, return empty vector ([]).\n');
             if ~isempty(best_ix)
                 eeg_hat_prevbest = eeg_hat_byalpha(best_ix,:);

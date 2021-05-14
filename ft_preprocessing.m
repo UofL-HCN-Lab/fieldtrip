@@ -660,23 +660,41 @@ else
                                   error(['Fix-jumps option "noise" not yet defined for channel type ' cfg.chantype '.']);
                           end
                       case 'kalman'
+                          % see Morbidi et al. (J Neurosci Meth 2007; doi:10.1016/j.jneumeth.2006.12.013)
                           if ~isfield(cfg,'kalmancfg') || isempty(cfg.kalmancfg)
-                              tmpcfg_(1).interactive = true;
-                              tmpcfg_.arorders = [2, 3, 4];
-                              tmpcfg_.bestarmodel = [];
-                              tmpcfg_.oeorders = [2, 2, 1;
-                                  3, 3, 1;
-                                  3, 4, 1;
-                                  4, 4, 1;
-                                  4, 5, 1;
+                              tmpcfg_(1).interactive = true; % whether to run filtering in interactive mode or not (true/false)
+                                                        % currently, MUST be run in interactive mode (AMG 05/14/21)
+                              tmpcfg_.arorders = [2, 3, 4]; % orders of autoregressive (AR) model, defining the number of 
+                                                            % samples in the past used to predict future values
+                                                            % generally, AR3 models are most consistently the best balance of
+                                                            % explainability and simplicity
+                              tmpcfg_.bestarmodel = []; % will be filled when best AR model is identified
+                              tmpcfg_.oeorders = [2, 2, 1; % parameters defining the best output-error (OE) models
+                                  3, 3, 1;                 % 1st column is nb = order of B(q) polynomial in numerator
+                                  3, 4, 1;                 % 2nd column is nf = order of F(q) polynomial in denominator
+                                  4, 4, 1;                 % 3rd column is nk = input delay of u(t) --> defined as 1 in Morbidi
+                                  4, 5, 1;                 % see doc oe for more info on oe model in MATLAB
                                   5, 5, 1;
                                   5, 6, 1;
                                   6, 6, 1];
-                              tmpcfg_.bestoemodel = [];
-                              tmpcfg_.varts = logspace(-5,2,8); % 0.1 is what was used in Morbidi et al (2007)
-                              tmpcfg_.alphas = [0.3 logspace(-4,0,5)];  % 0.3 is what was used in Morbidi et al (2007)
-                              tmpcfg_.padding = (cfg.padding - cfg.prestim - cfg.poststim)/2;
-                              tmpcfg_.include_nu_decay = false;
+                              tmpcfg_.bestoemodel = []; % will be filled when best OE model is identified
+                              tmpcfg_.varts = logspace(-5,2,8); % lambda_T in Morbidi, defining the variance of the stochastic 
+                                                                % component. best parameter value must be determined
+                                                                % 0.1 is what was used in Morbidi
+                              tmpcfg_.alphas = [0.3 logspace(-4,0,5)];  % M in Morbidi, defining the rate of exponential decay 
+                                                                        % of the stochastic component of the artifact
+                                                                        % 0.3 is what was used in Morbidi
+                              tmpcfg_.padding = (cfg.padding - cfg.prestim - cfg.poststim)/2; % artifact sample sent to 
+                                                                                              % ft_preproc_kalman includes padding
+                                                                                              % on either side. this defines the 
+                                                                                              % length of that padding
+                              tmpcfg_.include_nu_decay = false; % whether or not to include the exponential decay of the artifact 
+                                                                % stochastic component. generally, I found that not including it 
+                                                                % improves artifact removal
+                              % if looking to try to improve the quality of
+                              % artifact removal, I  would focus on
+                              % exploring different oeorders, alphas, or
+                              % varts
                               if c==1
                                   % recheck kalman params at every new
                                   % trial (for first bad channel only)
